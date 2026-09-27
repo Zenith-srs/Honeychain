@@ -1,4 +1,4 @@
-"""JWT auth with short-lived access tokens and bcrypt password hashes."""
+"""JWT auth with short-lived access tokens and passlib password hashes."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import os
 import secrets
 from datetime import datetime, timedelta, timezone
 
-import bcrypt
+from passlib.hash import bcrypt
 import jwt
 from fastapi import HTTPException
 from sqlalchemy import func, select
@@ -35,12 +35,12 @@ PBKDF_ITERATIONS = 120_000
 
 
 def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(rounds=12)).decode("utf-8")
+    return bcrypt.hash(password)
 
 
 def verify_password(password: str, stored: str) -> bool:
     if stored.startswith("$2"):
-        return bcrypt.checkpw(password.encode("utf-8"), stored.encode("utf-8"))
+        return bcrypt.verify(password, stored)
     try:
         salt_hex, digest_hex = stored.split("$", 1)
     except ValueError:
