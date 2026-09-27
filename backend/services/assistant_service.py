@@ -6,8 +6,13 @@ from sqlalchemy.orm import Session
 
 from backend.models.user import UserRecord
 from backend.services import me_service
-from backend.services.ml_service import ml_service
 from backend.services.sensor_service import latest_reading
+
+# Lazy import ML service to avoid crashes if sklearn/numpy unavailable
+try:
+    from backend.services.ml_service import ml_service
+except ImportError:
+    ml_service = None
 
 
 PRODUCT_KNOWLEDGE = """

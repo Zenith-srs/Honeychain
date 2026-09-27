@@ -11,11 +11,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import joblib
-import numpy as np
-import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.linear_model import LinearRegression
+try:
+    import joblib
+    import numpy as np
+    import pandas as pd
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.linear_model import LinearRegression
+    ML_AVAILABLE = True
+except ImportError:
+    ML_AVAILABLE = False
+    
 from sqlalchemy.orm import Session
 
 from backend.schemas.insights import HealthPrediction, InsightsOut, YieldForecast
