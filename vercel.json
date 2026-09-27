@@ -1,0 +1,27 @@
+{
+  "version": 2,
+  "name": "honeychain-backend",
+  "builds": [
+    {
+      "src": "backend/main.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "backend/main.py"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "backend/main.py"
+    }
+  ],
+  "env": {
+    "HONEYCHAIN_JWT_SECRET": "@jwt_secret",
+    "GEMINI_API_KEY": "@gemini_api_key",
+    "OFFICER_PASSWORD": "@officer_password",
+    "LAB_PASSWORD": "@lab_password",
+    "ADMIN_PASSWORD": "@admin_password"
+  }
+}

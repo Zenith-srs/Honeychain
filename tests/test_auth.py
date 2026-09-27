@@ -1,0 +1,502 @@
+from fastapi.testclient import TestClient
+
+
+def test_login_happy_path(client: TestClient) -> None:
+    response = client.post("/api/auth/login", json={"username": "beekeeper", "password": "Beekeeper123!"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["role"] == "beekeeper"
+    assert body["access_token"]
+
+
+def test_login_wrong_password_401(client: TestClient) -> None:
+    response = client.post("/api/auth/login", json={"username": "beekeeper", "password": "nope"})
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Incorrect password."
+
+
+def test_login_unknown_user_401(client: TestClient) -> None:
+    response = client.post("/api/auth/login", json={"username": "nobody", "password": "nope"})
+    assert response.status_code == 401
+    assert "No account found" in response.json()["detail"]
+
+
+def test_forgot_and_reset_password(client: TestClient) -> None:
+    missing = client.post("/api/auth/forgot-password", json={"username": "nobody"})
+    assert missing.status_code == 401
+    issued = client.post("/api/auth/forgot-password", json={"username": "beekeeper"})
+    assert issued.status_code == 200
+    code = issued.json()["reset_code"]
+    reset = client.post(
+        "/api/auth/reset-password",
+        json={"username": "beekeeper", "code": code, "password": "Beekeeper456!"},
+    )
+    assert reset.status_code == 200
+    assert client.post("/api/auth/login", json={"username": "beekeeper", "password": "Beekeeper123!"}).status_code == 401
+    assert client.post("/api/auth/login", json={"username": "beekeeper", "password": "Beekeeper456!"}).status_code == 200
+
+
+def test_me_requires_token_401(client: TestClient) -> None:
+    assert client.get("/api/auth/me").status_code == 401
+
+
+def test_me_with_token(client: TestClient) -> None:
+    token = client.post("/api/auth/login", json={"username": "admin", "password": "Admin123!"}).json()["access_token"]
+    response = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+    assert response.json()["role"] == "admin"
+
+
+def test_beekeeper_hives_are_scoped(client: TestClient) -> None:
+    token = client.post("/api/auth/login", json={"username": "beekeeper", "password": "Beekeeper123!"}).json()["access_token"]
+    response = client.get("/api/auth/me/hives", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+    assert [item["hive_id"] for item in response.json()] == ["IN-WB-001"]
+
+
+def test_lab_rejected_for_beekeeper_403(client: TestClient) -> None:
+    token = client.post("/api/auth/login", json={"username": "beekeeper", "password": "Beekeeper123!"}).json()["access_token"]
+    response = client.post(
+        "/api/lab/results",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"batch_id": "BT-X", "moisture_pct": 17, "purity_pct": 90, "result": "pass"},
+    )
+    assert response.status_code == 403
+
+
+def test_unauthenticated_public_routes_still_work(client: TestClient) -> None:
+    assert client.get("/api/hives").status_code == 200
+    assert client.get("/api/public/stats").status_code == 200
+    assert client.get("/health").status_code == 200
+
+
+def test_refresh_issues_new_access_token(client: TestClient) -> None:
+    login = client.post("/api/auth/login", json={"username": "admin", "password": "Admin123!"})
+    assert login.status_code == 200
+    refresh = login.json()["refresh_token"]
+    rotated = client.post("/api/auth/refresh", json={"refresh_token": refresh})
+    assert rotated.status_code == 200
+    assert rotated.json()["access_token"]
+    reused = client.post("/api/auth/refresh", json={"refresh_token": refresh})
+    assert reused.status_code == 401
+
+
+def test_beekeeper_cannot_read_other_hive_with_token(client: TestClient) -> None:
+    token = client.post("/api/auth/login", json={"username": "beekeeper", "password": "Beekeeper123!"}).json()[
+        "access_token"
+    ]
+    denied = client.get("/api/hives/DE-001", headers={"Authorization": f"Bearer {token}"})
+    assert denied.status_code == 403
+    allowed = client.get("/api/hives/IN-WB-001", headers={"Authorization": f"Bearer {token}"})
+    assert allowed.status_code == 200
+
+
+def test_admin_creates_officer_beekeeper_cannot(client: TestClient) -> None:
+    beekeeper = client.post("/api/auth/login", json={"username": "beekeeper", "password": "Beekeeper123!"}).json()[
+        "access_token"
+    ]
+    assert (
+        client.post(
+            "/api/admin/users",
+            headers={"Authorization": f"Bearer {beekeeper}"},
+            json={
+                "username": "newofficer",
+                "password": "Officer123!",
+                "display_name": "New Officer",
+                "role": "officer",
+            },
+        ).status_code
+        == 403
+    )
+    admin = client.post("/api/auth/login", json={"username": "admin", "password": "Admin123!"}).json()["access_token"]
+    created = client.post(
+        "/api/admin/users",
+        headers={"Authorization": f"Bearer {admin}"},
+        json={
+            "username": "newofficer",
+            "password": "Officer123!",
+            "display_name": "New Officer",
+            "role": "officer",
+            "region": "Kerala",
+        },
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["role"] == "officer"
+
+
+def test_register_ignores_role_field(client: TestClient) -> None:
+    created = client.post(
+        "/api/auth/register",
+        json={
+            "username": "sneaky",
+            "password": "Sneaky@2026!",
+            "display_name": "Sneaky",
+            "region": "Assam",
+            "email": "sneaky@test.com",
+            "phone": "9998887777",
+            "role": "admin",
+        },
+    )
+    assert created.status_code == 201
+    assert created.json()["role"] == "beekeeper"
+
+
+def test_login_by_display_name(client: TestClient) -> None:
+    response = client.post("/api/auth/login", json={"username": "Ananya Roy", "password": "Beekeeper123!"})
+    assert response.status_code == 200
+    assert response.json()["role"] == "beekeeper"
+
+
+def test_reset_accepts_frontend_aliases(client: TestClient) -> None:
+    issued = client.post("/api/auth/forgot-password", json={"username": "Ananya Roy"})
+    assert issued.status_code == 200
+    assert issued.json()["username"] == "beekeeper"
+    code = issued.json()["reset_code"]
+    reset = client.post(
+        "/api/auth/reset-password",
+        json={"username": "Ananya Roy", "reset_code": code, "new_password": "Beekeeper789!"},
+    )
+    assert reset.status_code == 200, reset.text
+    assert client.post("/api/auth/login", json={"username": "beekeeper", "password": "Beekeeper789!"}).status_code == 200
+
+
+def test_register_beekeeper_gets_a_hive(client: TestClient) -> None:
+    created = client.post(
+        "/api/auth/register",
+        json={
+            "username": "dhruv",
+            "password": "DhruvPass1!",
+            "display_name": "Dhruv Agarwal",
+            "region": "Kerala",
+            "email": "dhruv@test.com",
+            "phone": "8887776666",
+        },
+    )
+    assert created.status_code == 201, created.text
+    token = created.json()["access_token"]
+    hives = client.get("/api/auth/me/hives", headers={"Authorization": f"Bearer {token}"})
+    assert hives.status_code == 200
+    assert len(hives.json()) >= 1
+    hive_id = hives.json()[0]["hive_id"]
+    summary = client.get(f"/api/hives/{hive_id}/summary", headers={"Authorization": f"Bearer {token}"})
+    assert summary.status_code == 200
+    assert summary.json()["reading_count"] >= 5
+
+
+def test_register_beekeeper_then_me(client: TestClient) -> None:
+    created = client.post(
+        "/api/auth/register",
+        json={
+            "username": "newkeeper",
+            "password": "NewKeeper1!",
+            "display_name": "New Keeper",
+            "region": "Karnataka",
+            "email": "newkeeper@test.com",
+            "phone": "7776665555",
+        },
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["role"] == "beekeeper"
+    token = created.json()["access_token"]
+    me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert me.status_code == 200
+    assert me.json()["region"] == "Karnataka"
+
+
+# Security tests for staff registration
+def test_register_staff_endpoint_removed(client: TestClient) -> None:
+    """Verify that the public staff registration endpoint no longer exists."""
+    response = client.post(
+        "/api/auth/register-staff?role=officer",
+        json={
+            "username": "sneakyofficer",
+            "password": "Officer123!",
+            "display_name": "Sneaky Officer",
+            "region": "Kerala",
+            "email": "sneaky@example.com",
+            "phone": "1234567890",
+        },
+    )
+    assert response.status_code in [404, 405], "Staff registration endpoint should not be accessible (404 or 405)"
+
+
+def test_anonymous_cannot_create_officer_account(client: TestClient) -> None:
+    """Verify anonymous users cannot create officer accounts through any endpoint."""
+    # Try through removed staff registration endpoint
+    response = client.post(
+        "/api/auth/register-staff?role=officer",
+        json={
+            "username": "anon_officer",
+            "password": "Officer123!",
+            "display_name": "Anonymous Officer",
+            "region": "Kerala",
+            "email": "anon@example.com",
+            "phone": "9876543210",
+        },
+    )
+    assert response.status_code in [404, 405], "Endpoint should not exist or be accessible"
+    
+    # Try through admin endpoint without authentication
+    response = client.post(
+        "/api/admin/users",
+        json={
+            "username": "anon_officer2",
+            "password": "Officer123!",
+            "display_name": "Anonymous Officer 2",
+            "role": "officer",
+            "region": "Kerala",
+        },
+    )
+    assert response.status_code == 401, "Should require authentication"
+
+
+def test_anonymous_cannot_create_lab_account(client: TestClient) -> None:
+    """Verify anonymous users cannot create lab accounts."""
+    # Try through removed staff registration endpoint
+    response = client.post(
+        "/api/auth/register-staff?role=lab",
+        json={
+            "username": "anon_lab",
+            "password": "Lab123!",
+            "display_name": "Anonymous Lab",
+            "region": "Karnataka",
+            "email": "lab@example.com",
+            "phone": "1112223333",
+        },
+    )
+    assert response.status_code in [404, 405], "Endpoint should not exist or be accessible"
+    
+    # Try through admin endpoint without authentication
+    response = client.post(
+        "/api/admin/users",
+        json={
+            "username": "anon_lab2",
+            "password": "Lab123!",
+            "display_name": "Anonymous Lab 2",
+            "role": "lab",
+            "region": "Karnataka",
+        },
+    )
+    assert response.status_code == 401, "Should require authentication"
+
+
+def test_anonymous_cannot_create_admin_account(client: TestClient) -> None:
+    """Verify anonymous users cannot create admin accounts."""
+    # Try through removed staff registration endpoint
+    response = client.post(
+        "/api/auth/register-staff?role=admin",
+        json={
+            "username": "anon_admin",
+            "password": "Admin123!",
+            "display_name": "Anonymous Admin",
+            "region": "India",
+            "email": "admin@example.com",
+            "phone": "4445556666",
+        },
+    )
+    assert response.status_code in [404, 405], "Endpoint should not exist or be accessible"
+    
+    # Try through admin endpoint without authentication
+    response = client.post(
+        "/api/admin/users",
+        json={
+            "username": "anon_admin2",
+            "password": "Admin123!",
+            "display_name": "Anonymous Admin 2",
+            "role": "admin",
+        },
+    )
+    assert response.status_code == 401, "Should require authentication"
+
+
+def test_beekeeper_cannot_create_officer_account(client: TestClient) -> None:
+    """Verify beekeepers cannot create officer accounts (403 Forbidden)."""
+    beekeeper_token = client.post(
+        "/api/auth/login", 
+        json={"username": "beekeeper", "password": "Beekeeper123!"}
+    ).json()["access_token"]
+    
+    response = client.post(
+        "/api/admin/users",
+        headers={"Authorization": f"Bearer {beekeeper_token}"},
+        json={
+            "username": "beekeeper_officer",
+            "password": "Officer123!",
+            "display_name": "Beekeeper Created Officer",
+            "role": "officer",
+            "region": "Assam",
+        },
+    )
+    assert response.status_code == 403, "Beekeepers should not be able to create officers"
+
+
+def test_beekeeper_cannot_create_lab_account(client: TestClient) -> None:
+    """Verify beekeepers cannot create lab accounts (403 Forbidden)."""
+    beekeeper_token = client.post(
+        "/api/auth/login", 
+        json={"username": "beekeeper", "password": "Beekeeper123!"}
+    ).json()["access_token"]
+    
+    response = client.post(
+        "/api/admin/users",
+        headers={"Authorization": f"Bearer {beekeeper_token}"},
+        json={
+            "username": "beekeeper_lab",
+            "password": "Lab123!",
+            "display_name": "Beekeeper Created Lab",
+            "role": "lab",
+            "region": "Tamil Nadu",
+        },
+    )
+    assert response.status_code == 403, "Beekeepers should not be able to create lab accounts"
+
+
+def test_beekeeper_cannot_create_admin_account(client: TestClient) -> None:
+    """Verify beekeepers cannot create admin accounts (403 Forbidden)."""
+    beekeeper_token = client.post(
+        "/api/auth/login", 
+        json={"username": "beekeeper", "password": "Beekeeper123!"}
+    ).json()["access_token"]
+    
+    response = client.post(
+        "/api/admin/users",
+        headers={"Authorization": f"Bearer {beekeeper_token}"},
+        json={
+            "username": "beekeeper_admin",
+            "password": "Admin123!",
+            "display_name": "Beekeeper Created Admin",
+            "role": "admin",
+        },
+    )
+    assert response.status_code == 403, "Beekeepers should not be able to create admins"
+
+
+def test_officer_cannot_create_staff_accounts(client: TestClient) -> None:
+    """Verify officers cannot create staff accounts (403 Forbidden)."""
+    officer_token = client.post(
+        "/api/auth/login", 
+        json={"username": "officer", "password": "Officer123!"}
+    ).json()["access_token"]
+    
+    # Try to create officer
+    response = client.post(
+        "/api/admin/users",
+        headers={"Authorization": f"Bearer {officer_token}"},
+        json={
+            "username": "officer_created",
+            "password": "NewOfficer1!",
+            "display_name": "Officer Created",
+            "role": "officer",
+            "region": "Kerala",
+        },
+    )
+    assert response.status_code == 403, "Officers should not be able to create staff accounts"
+    
+    # Try to create admin
+    response = client.post(
+        "/api/admin/users",
+        headers={"Authorization": f"Bearer {officer_token}"},
+        json={
+            "username": "officer_admin",
+            "password": "Admin123!",
+            "display_name": "Officer Created Admin",
+            "role": "admin",
+        },
+    )
+    assert response.status_code == 403, "Officers should not be able to create admins"
+
+
+def test_only_admin_can_create_officer_accounts(client: TestClient) -> None:
+    """Verify only admins can create officer accounts."""
+    admin_token = client.post(
+        "/api/auth/login", 
+        json={"username": "admin", "password": "Admin123!"}
+    ).json()["access_token"]
+    
+    response = client.post(
+        "/api/admin/users",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={
+            "username": "newofficer2",
+            "password": "Officer456!",
+            "display_name": "New Officer 2",
+            "role": "officer",
+            "region": "Maharashtra",
+        },
+    )
+    assert response.status_code == 201, "Admin should be able to create officer accounts"
+    assert response.json()["role"] == "officer"
+    assert response.json()["username"] == "newofficer2"
+
+
+def test_only_admin_can_create_lab_accounts(client: TestClient) -> None:
+    """Verify only admins can create lab accounts."""
+    admin_token = client.post(
+        "/api/auth/login", 
+        json={"username": "admin", "password": "Admin123!"}
+    ).json()["access_token"]
+    
+    response = client.post(
+        "/api/admin/users",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={
+            "username": "newlab",
+            "password": "Lab@2026!",
+            "display_name": "New Lab Inspector",
+            "role": "lab",
+            "region": "Gujarat",
+            "email": "newlab@test.com",
+            "phone": "6665554444",
+        },
+    )
+    assert response.status_code == 201, "Admin should be able to create lab accounts"
+    assert response.json()["role"] == "lab"
+    assert response.json()["username"] == "newlab"
+
+
+def test_only_admin_can_create_admin_accounts(client: TestClient) -> None:
+    """Verify only admins can create new admin accounts."""
+    admin_token = client.post(
+        "/api/auth/login", 
+        json={"username": "admin", "password": "Admin123!"}
+    ).json()["access_token"]
+    
+    response = client.post(
+        "/api/admin/users",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={
+            "username": "newadmin",
+            "password": "Admin456!",
+            "display_name": "New Admin",
+            "role": "admin",
+            "region": "India",
+        },
+    )
+    assert response.status_code == 201, "Admin should be able to create new admin accounts"
+    assert response.json()["role"] == "admin"
+    assert response.json()["username"] == "newadmin"
+
+
+def test_beekeeper_self_registration_still_works(client: TestClient) -> None:
+    """Verify normal beekeeper self-registration is preserved and working."""
+    response = client.post(
+        "/api/auth/register",
+        json={
+            "username": "normalkeeper",
+            "password": "Keeper@2026!",
+            "display_name": "Normal Keeper",
+            "region": "Punjab",
+            "email": "normal@example.com",
+            "phone": "7778889999",
+        },
+    )
+    assert response.status_code == 201, "Beekeeper self-registration should still work"
+    assert response.json()["role"] == "beekeeper", "Should always be beekeeper role"
+    assert response.json()["access_token"], "Should receive access token"
+    
+    # Verify the account was created and can log in
+    login_response = client.post(
+        "/api/auth/login",
+        json={"username": "normalkeeper", "password": "Keeper@2026!"}
+    )
+    assert login_response.status_code == 200, "Should be able to login with created account"

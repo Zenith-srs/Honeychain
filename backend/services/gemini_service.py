@@ -1,0 +1,303 @@
+"""Server-side Gemini calls. Numbers are never taken from the model."""
+
+from __future__ import annotations
+
+import logging
+import os
+import re
+
+import httpx
+
+from backend.schemas.insights import HealthPrediction, YieldForecast
+
+logger = logging.getLogger("honeychain")
+
+GEMINI_MODELS = (
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-001",
+    "gemini-flash-latest",
+    "gemini-1.5-flash",
+    "gemini-1.5-flash-latest",
+)
+
+LANG_NAMES = {
+    "en": "English",
+    "hi": "Hindi",
+    "bn": "Bengali",
+    "ta": "Tamil",
+    "kn": "Kannada",
+    "te": "Telugu",
+    "mr": "Marathi",
+}
+
+FALLBACK_LEAD = {
+    "en": "Here is what HoneyChain can tell you from live records and the product itself. If a figure is not listed, it is not available yet.",
+    "hi": "HoneyChain आपके लाइव रिकॉर्ड और उत्पाद ज्ञान से यह बता सकता है। जो आँकड़ा सूची में नहीं है, वह अभी उपलब्ध नहीं है।",
+    "bn": "HoneyChain আপনার লাইভ রেকর্ড ও পণ্যের তথ্য থেকে এটি বলতে পারে। তালিকায় নেই এমন কোনো সংখ্যা এখন নেই।",
+    "ta": "HoneyChain உங்கள் நேரடி பதிவுகள் மற்றும் தயாரிப்பு விளக்கத்திலிருந்து இதைச் சொல்லும். பட்டியலில் இல்லாத எண் இன்னும் இல்லை.",
+    "kn": "HoneyChain ನಿಮ್ಮ ಲೈವ್ ದಾಖಲೆಗಳು ಮತ್ತು ಉತ್ಪನ್ನದಿಂದ ಇದನ್ನು ಹೇಳುತ್ತದೆ. ಪಟ್ಟಿಯಲ್ಲಿ ಇಲ್ಲದ ಅಂಕಿ ಇನ್ನೂ ಲಭ್ಯವಿಲ್ಲ.",
+    "te": "HoneyChain మీ లైవ్ రికార్డులు మరియు ఉత్పత్తి సమాచారం నుండి ఇది చెబుతుంది. జాబితాలో లేని సంఖ్య ఇంకా అందుబాటులో లేదు.",
+    "mr": "HoneyChain तुमच्या लाइव्ह नोंदी आणि उत्पादनातून हे सांगू शकते. यादीत नसलेली आकडेवारी अजून उपलब्ध नाही.",
+}
+
+REFUSE = {
+    "en": "I can only help with HoneyChain — hives, harvests, batches, lab, ledger, QR verify, market, insights, and how to use this app.",
+    "hi": "मैं केवल HoneyChain में मदद कर सकता हूँ — छत्ते, फसल, बैच, लैब, लेजर, QR जाँच, बाज़ार, इनसाइट्स, और इस ऐप का उपयोग।",
+    "bn": "আমি শুধু HoneyChain নিয়ে সাহায্য করি — ছাঁক, ফসল, ব্যাচ, ল্যাব, লেজার, QR, বাজার, ইনসাইটস এবং অ্যাপ ব্যবহার।",
+    "ta": "நான் HoneyChain மட்டுமே உதவுவேன் — தேனீக்கூடு, அறுவடை, தொகுதி, ஆய்வகம், லெட்ஜர், QR, சந்தை, நுண்ணறிவு, செயலி பயன்பாடு.",
+    "kn": "ನಾನು HoneyChain ಬಗ್ಗೆ ಮಾತ್ರ ಸಹಾಯ ಮಾಡುತ್ತೇನೆ — ಜೇನುಗೂಡು, ಸುಗ್ಗಿ, ಬ್ಯಾಚ್, ಲ್ಯಾಬ್, ಲೆಡ್ಜರ್, QR, ಮಾರುಕಟ್ಟೆ, ಒಳನೋಟ, ಅಪ್ಲಿಕೇಶನ್.",
+    "te": "నేను HoneyChain గురించి మాత్రమే సహాయం చేస్తాను — తేనెటీగల పెట్టె, పంట, బ్యాచ్, ల్యాబ్, లెడ్జర్, QR, మార్కెట్, ఇన్‌సైట్స్, యాప్.",
+    "mr": "मी फक्त HoneyChain मध्ये मदत करतो — पोळी, कापणी, बॅच, लॅब, लेजर, QR, बाजार, इनसाइट्स आणि अॅप वापर.",
+}
+
+
+def api_key() -> str:
+    return (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or "").strip()
+
+
+def detect_language(text: str, hinted: str = "en") -> str:
+    hinted = (hinted or "en")[:2]
+    if any("\u0b80" <= ch <= "\u0bff" for ch in text):
+        return "ta"
+    if any("\u0c00" <= ch <= "\u0c7f" for ch in text):
+        return "te"
+    if any("\u0c80" <= ch <= "\u0cff" for ch in text):
+        return "kn"
+    if any("\u0980" <= ch <= "\u09ff" for ch in text):
+        return "bn"
+    if any("\u0900" <= ch <= "\u097f" for ch in text):
+        return "mr" if hinted == "mr" else "hi"
+    return hinted if hinted in LANG_NAMES else "en"
+
+
+def computed_explanation(health: HealthPrediction, forecast: YieldForecast) -> str:
+    feats = health.features
+    text = (
+        f"This hive's live readings give a colony status of {health.status} "
+        f"(model confidence {(health.confidence * 100):.1f}%). "
+        f"{health.status_meaning or ''} "
+        f"Mean inside temperature {feats.get('mean_inside_temp', 0):.1f} °C, "
+        f"mean humidity {feats.get('mean_humidity', 0):.1f}%, "
+        f"weight change {feats.get('weight_slope', 0):.2f} kg in the recent window. "
+        f"Latest measured hive weight {forecast.recent_weight_kg:.2f} kg; "
+        f"short-horizon forecast {forecast.predicted_weight_kg:.2f} kg. "
+    )
+    if health.reasons:
+        text += "Why: " + " ".join(health.reasons[:4]) + " "
+    if forecast.predicted_honey_kg is not None:
+        text += (
+            f"Seasonal honey-yield estimate from the MSPB temperature/humidity model "
+            f"is {forecast.predicted_honey_kg:.2f} kg (not the hive scale). "
+        )
+    text += "These figures are recomputed from the current sensor history each time you open this page."
+    return text
+
+
+def _generate(prompt: str, timeout: float = 20.0) -> str | None:
+    key = api_key()
+    if not key:
+        logger.warning("Assistant: GEMINI_API_KEY is not set.")
+        return None
+    payload = {"contents": [{"parts": [{"text": prompt}]}]}
+    headers = {"x-goog-api-key": key, "Content-Type": "application/json"}
+    last_status = None
+    for model in GEMINI_MODELS:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+        try:
+            response = httpx.post(url, headers=headers, json=payload, timeout=timeout)
+            last_status = response.status_code
+            if response.status_code >= 400:
+                logger.warning("Assistant: model %s returned HTTP %s", model, response.status_code)
+                continue
+            data = response.json()
+            parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+            text = "".join(item.get("text", "") for item in parts).strip()
+            if text:
+                return text
+        except Exception:
+            logger.warning("Assistant: model %s request failed", model, exc_info=False)
+            continue
+    logger.warning("Assistant: no Gemini model returned text (last HTTP %s)", last_status)
+    return None
+
+
+def explain_insights(health: HealthPrediction, forecast: YieldForecast, language: str = "en") -> tuple[str | None, bool]:
+    facts = computed_explanation(health, forecast)
+    lang = LANG_NAMES.get(language, "English")
+    prompt = (
+        f"Write 2 short sentences in {lang} explaining these already-computed hive facts "
+        "for a beekeeper. Do not invent extra numbers. Do not diagnose disease with certainty. "
+        "Say what the status means and which live readings pushed it that way. "
+        "If humidity is high and weight gain is low, you may mention possible colony stress as a possibility only.\n\n"
+        f"FACTS:\n{facts}"
+    )
+    text = _generate(prompt)
+    return text, bool(api_key()) and text is not None
+
+
+def answer_grounded(question: str, language: str, context: str) -> tuple[str, bool, str, str]:
+    """Answer user questions with grounded context and enhanced prompting."""
+    lang = detect_language(question, language)
+    lang_name = LANG_NAMES.get(lang, "English")
+    
+    # Enhanced system prompt for better responses
+    prompt = (
+        f"You are the HoneyChain AI Assistant, an expert helper built into the HoneyChain honey-traceability platform. "
+        f"You are knowledgeable, friendly, and practical.\n\n"
+        f"RESPONSE LANGUAGE: Reply entirely in {lang_name}. Match the user's language naturally.\n\n"
+        
+        "YOUR EXPERTISE:\n"
+        "- Beekeeping: hive management, colony health, harvest procedures, seasonal patterns\n"
+        "- HoneyChain platform: all features, workflows, roles, and troubleshooting\n"
+        "- Traceability: ledger, batches, QR codes, oracle rules, CloneWatch\n"
+        "- Data interpretation: sensor readings, AI predictions, quality metrics\n"
+        "- Role-specific guidance: beekeeper, officer, lab inspector, admin workflows\n\n"
+        
+        "RESPONSE STYLE:\n"
+        "- Be conversational and encouraging, like a helpful colleague\n"
+        "- Give step-by-step instructions when asked 'how to'\n"
+        "- Explain the 'why' behind processes, not just the 'what'\n"
+        "- Use bullet points for multi-step answers\n"
+        "- Reference specific numbers from the CONTEXT when available\n"
+        "- If suggesting actions, be specific about where to click or navigate\n\n"
+        
+        "RULES:\n"
+        "1. ONLY use numbers and facts from the CONTEXT below - never invent data\n"
+        "2. If information is missing from CONTEXT, say 'This data is not available yet' or similar\n"
+        "3. You CAN answer questions about:\n"
+        "   - HoneyChain features, workflows, and how to use them\n"
+        "   - Beekeeping best practices and colony care\n"
+        "   - Interpreting this user's live data (hives, harvests, sensors)\n"
+        "   - Troubleshooting issues with the platform\n"
+        "   - Role responsibilities and permissions\n"
+        "4. You CANNOT answer:\n"
+        "   - Other users' private data (refuse politely)\n"
+        "   - Topics unrelated to HoneyChain or beekeeping (refuse politely)\n"
+        "   - Medical diagnoses (for hive photos, give observations only)\n\n"
+        
+        "EXAMPLES OF GOOD RESPONSES:\n"
+        "Q: 'How do I log a harvest?'\n"
+        "A: 'To log a harvest:\n"
+        "1. Go to the Traceability page from the menu\n"
+        "2. Click \"Log Harvest\"\n"
+        "3. Select your hive from the dropdown\n"
+        "4. Enter the raw honey weight in kilograms\n"
+        "5. Add any notes about the harvest\n"
+        "6. Click Save\n\n"
+        "Your harvest will show as \"pending\" until your KVIC officer includes it in a batch and the lab inspector approves it.'\n\n"
+        
+        "Q: 'Why is my hive health showing as weak?'\n"
+        "A: 'Looking at your hive data, the AI shows \"weak\" status because:\n"
+        "- Recent weight is trending down\n"
+        "- Humidity is higher than optimal (above 60%)\n"
+        "- Temperature fluctuations detected\n\n"
+        "This suggests the colony may be stressed. I recommend checking for adequate ventilation and ensuring the queen is active. "
+        "If you're concerned, contact your KVIC officer for an in-person inspection.'\n\n"
+        
+        f"CONTEXT (user's current data and available features):\n{context}\n\n"
+        f"USER QUESTION:\n{question}\n\n"
+        f"Your helpful response in {lang_name}:"
+    )
+    
+    text = _generate(prompt, timeout=25.0)  # Increased timeout for complex questions
+    if text:
+        return text, True, f"AI-powered answer grounded in your HoneyChain data (Gemini {GEMINI_MODELS[0]})", lang
+    
+    # Fallback if AI fails
+    fallback = _fallback_answer(question, context, lang)
+    return fallback, False, "Answered from your live HoneyChain records (AI unavailable).", lang
+
+
+def observe_image(image_b64: str, mime: str, language: str = "en") -> tuple[str, bool]:
+    """Observe hive/comb photos with enhanced AI analysis."""
+    key = api_key()
+    lang = LANG_NAMES.get(language, "English")
+    if not key:
+        return (
+            "Photo observation requires GEMINI_API_KEY on the server. "
+            "This is a preliminary observation, not a veterinary diagnosis. "
+            "Consult your KVIC officer if you have concerns about colony health.",
+            False,
+        )
+    
+    # Enhanced prompt for better observations
+    prompt = (
+        f"You are an AI assistant helping beekeepers observe their hives. "
+        f"Analyze this hive/honeycomb photo and provide helpful observations in {lang}.\n\n"
+        
+        "PROVIDE:\n"
+        "1. What you see (brood pattern, comb condition, bee coverage, honey stores)\n"
+        "2. Any visible signs of concern (pests, disease symptoms, structural issues)\n"
+        "3. Positive observations (healthy brood, good comb building, active bees)\n"
+        "4. Practical suggestions if anything needs attention\n\n"
+        
+        "IMPORTANT:\n"
+        "- This is a preliminary observation only, NOT a veterinary diagnosis\n"
+        "- Do not invent sensor numbers or statistics\n"
+        "- If you see potential disease symptoms, suggest consulting a KVIC officer\n"
+        "- Be specific about what you observe in the image\n"
+        "- Keep response to 3-4 sentences\n"
+        "- Be encouraging but honest about any concerns\n\n"
+        
+        f"Provide your observation in {lang}:"
+    )
+    
+    text = _generate_image(prompt, image_b64, mime)
+    if text:
+        return text, True
+    return (
+        "Could not analyze the photo. Please ensure the image is clear and try again. "
+        "Sensor data on this page remains unchanged.",
+        False
+    )
+
+
+def _generate_image(prompt: str, image_b64: str, mime: str) -> str | None:
+    key = api_key()
+    if not key:
+        return None
+    payload = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": prompt},
+                    {"inline_data": {"mime_type": mime, "data": image_b64}},
+                ]
+            }
+        ]
+    }
+    headers = {"x-goog-api-key": key, "Content-Type": "application/json"}
+    for model in GEMINI_MODELS:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+        try:
+            response = httpx.post(url, headers=headers, json=payload, timeout=20.0)
+            if response.status_code >= 400:
+                continue
+            data = response.json()
+            parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+            text = "".join(item.get("text", "") for item in parts).strip()
+            if text:
+                return text
+        except Exception:
+            continue
+    return None
+
+
+_PRODUCT_RE = re.compile(
+    r"hive|harvest|batch|honey|weight|humidity|market|ledger|qr|tour|login|colony|"
+    r"insight|alert|verify|oracle|lab|officer|beekeeper|package|clone|trace|"
+    r"how|what|help|hello|hi|namaste|namaskar",
+    re.I,
+)
+_OFF_TOPIC_RE = re.compile(r"cricket|world cup|bitcoin|lottery|movie", re.I)
+
+
+def _fallback_answer(question: str, context: str, language: str = "en") -> str:
+    lang = language if language in FALLBACK_LEAD else "en"
+    indic = lang != "en"
+    if _OFF_TOPIC_RE.search(question) and not _PRODUCT_RE.search(question):
+        return REFUSE[lang]
+    if not indic and not _PRODUCT_RE.search(question):
+        return REFUSE[lang]
+    return f"{FALLBACK_LEAD[lang]}\n\n{context}"

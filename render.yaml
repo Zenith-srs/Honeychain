@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: honeychain-backend
+    runtime: python
+    plan: free
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      - key: HONEYCHAIN_ENV
+        value: production
+      - key: HONEYCHAIN_DEMO_MODE
+        value: true
+      - key: HONEYCHAIN_JWT_SECRET
+        value: OMODVndn83IxAE5k3bDEC8wUwdseTMY5ukopb8YFv1Q
+      - key: HONEYCHAIN_DEMO_ADMIN_USERNAME
+        value: demo_admin
+      - key: HONEYCHAIN_DEMO_ADMIN_PASSWORD
+        value: DemoAdminPass123!@#
+      - key: HONEYCHAIN_DEMO_OFFICER_USERNAME
+        value: demo_officer
+      - key: HONEYCHAIN_DEMO_OFFICER_PASSWORD
+        value: DemoOfficerPass123!@#
+      - key: HONEYCHAIN_DEMO_LAB_USERNAME
+        value: demo_lab
+      - key: HONEYCHAIN_DEMO_LAB_PASSWORD
+        value: DemoLabPass123!@#
+      - key: GEMINI_API_KEY
+        value: AQ.Ab8RN6Kor3eJOcyf6lyg4EL4RIupGBY9nBXjrk4RFZWyXU8U1w
+      - key: HONEYCHAIN_DATABASE_URL
+        value: sqlite:///honeychain.db
