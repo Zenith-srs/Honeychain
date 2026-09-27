@@ -63,7 +63,7 @@ def list_invitations(
     return invitation_service.list_invitations(session)
 
 
-@router.delete("/{token_hash}", status_code=204)
+@router.delete("/{token_hash}", status_code=204, response_model=None)
 def revoke_invitation(
     token_hash: str,
     admin: UserRecord = Depends(require_roles("admin")),
