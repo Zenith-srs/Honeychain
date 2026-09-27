@@ -10,6 +10,7 @@ Security:
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
@@ -63,12 +64,12 @@ def list_invitations(
     return invitation_service.list_invitations(session)
 
 
-@router.delete("/{token_hash}", status_code=204, response_model=None)
+@router.delete("/{token_hash}", status_code=204)
 def revoke_invitation(
     token_hash: str,
     admin: UserRecord = Depends(require_roles("admin")),
     session: Session = Depends(get_db),
-) -> None:
+) -> Response:
     """
     Revoke an invitation by its token hash (admin only).
     
@@ -76,3 +77,4 @@ def revoke_invitation(
     """
     invitation_service.revoke_invitation(session, token_hash)
     session.commit()
+    return Response(status_code=204)
