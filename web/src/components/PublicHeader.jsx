@@ -30,9 +30,6 @@ export default function PublicHeader() {
           <Link className="ghost" to="/login">
             {t("nav.login")}
           </Link>
-          <Link className="ghost" to="/login?staff=true">
-            {t("nav.staff")}
-          </Link>
           <Link className="primary" to="/register">
             {t("nav.register")}
           </Link>

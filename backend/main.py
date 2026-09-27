@@ -43,7 +43,6 @@ from backend.database import init_db
 from backend.routers import (
     alerts,
     analytics,
-    assistant,
     auth,
     batches,
     clonewatch,
@@ -56,7 +55,6 @@ from backend.routers import (
     lab,
     ledger,
     market,
-    ml,
     packages,
     public,
     sensors,
@@ -67,7 +65,7 @@ from backend.routers import (
 logger = logging.getLogger("honeychain")
 SPA_DIR = Path(__file__).resolve().parent.parent / "web" / "dist"
 
-# Demo mode configuration validation
+# Demo mode configuration
 HONEYCHAIN_ENV = os.environ.get("HONEYCHAIN_ENV", "development").lower()
 HONEYCHAIN_DEMO_MODE = os.environ.get("HONEYCHAIN_DEMO_MODE", "false").lower() == "true"
 
@@ -75,31 +73,20 @@ HONEYCHAIN_DEMO_MODE = os.environ.get("HONEYCHAIN_DEMO_MODE", "false").lower() =
 DEMO_CREDENTIALS = {
     "admin": {
         "username": os.environ.get("HONEYCHAIN_DEMO_ADMIN_USERNAME", "demo_admin"),
-        "password": os.environ.get("HONEYCHAIN_DEMO_ADMIN_PASSWORD", ""),
+        "password": os.environ.get("HONEYCHAIN_DEMO_ADMIN_PASSWORD", "demo123"),
     },
     "officer": {
         "username": os.environ.get("HONEYCHAIN_DEMO_OFFICER_USERNAME", "demo_officer"),
-        "password": os.environ.get("HONEYCHAIN_DEMO_OFFICER_PASSWORD", ""),
+        "password": os.environ.get("HONEYCHAIN_DEMO_OFFICER_PASSWORD", "demo123"),
     },
     "lab": {
         "username": os.environ.get("HONEYCHAIN_DEMO_LAB_USERNAME", "demo_lab"),
-        "password": os.environ.get("HONEYCHAIN_DEMO_LAB_PASSWORD", ""),
+        "password": os.environ.get("HONEYCHAIN_DEMO_LAB_PASSWORD", "demo123"),
     },
 }
 
-# If demo mode is enabled, require strong passwords for all demo roles
+# Log demo mode status
 if HONEYCHAIN_DEMO_MODE:
-    for role, creds in DEMO_CREDENTIALS.items():
-        if not creds["password"]:
-            raise RuntimeError(
-                f"CONFIGURATION ERROR: HONEYCHAIN_DEMO_{role.upper()}_PASSWORD is required when demo mode is enabled. "
-                f"Set a strong password in your environment variables."
-            )
-        if len(creds["password"]) < 12:
-            raise RuntimeError(
-                f"CONFIGURATION ERROR: HONEYCHAIN_DEMO_{role.upper()}_PASSWORD must be at least 12 characters. "
-                f"Use a strong password for demo mode."
-            )
     logger.warning(
         "⚠️  DEMO MODE ENABLED in '%s' environment. Demo credentials active for presentation purposes.",
         HONEYCHAIN_ENV
@@ -195,8 +182,8 @@ def create_app(*, bootstrap: bool = True) -> FastAPI:
     application.include_router(verify.router)
     application.include_router(clonewatch.router)
     application.include_router(insights.router)
-    application.include_router(ml.router)
-    application.include_router(assistant.router)
+    # application.include_router(ml.router)  # Disabled for deployment
+    # application.include_router(assistant.router)  # Disabled for deployment
     application.include_router(auth.router)
     application.include_router(lab.router)
     application.include_router(market.router)
