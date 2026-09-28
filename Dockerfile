@@ -13,6 +13,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY backend ./backend
+COPY start_railway.py .
 
 # Set environment variables (Railway will inject these from environment)
 ENV PYTHONPATH=/app
@@ -22,5 +23,5 @@ ENV HONEYCHAIN_DEMO_MODE=true
 # Expose port
 EXPOSE 8000
 
-# Run the application using shell form to properly expand $PORT
-CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Run the application using Python startup script
+CMD ["python", "start_railway.py"]
