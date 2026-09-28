@@ -189,6 +189,10 @@ export async function apiRequest(method, path, payload, options = {}) {
   if (payload !== undefined) {
     headers["Content-Type"] = "application/json";
   }
+  // Add header for localtunnel bypass
+  if (API_BASE && API_BASE.includes('loca.lt')) {
+    headers["Bypass-Tunnel-Reminder"] = "true";
+  }
   let response;
   try {
     const controller = new AbortController();

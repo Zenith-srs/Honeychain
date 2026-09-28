@@ -844,3 +844,29 @@ input:valid:not(:placeholder-shown) {
   font-size: 0.875rem;
   color: var(--warning-text, #856404);
 }
+
+/* Floating Language Switcher Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.2s ease-out;
+}
+
+/* Smooth language transition for all text */
+[lang] {
+  transition: opacity 0.3s ease;
+}
+
+/* Ensure floating button doesn't interfere with content */
+.fixed.bottom-6.right-6 {
+  pointer-events: auto;
+}

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../auth";
@@ -14,13 +14,39 @@ export default function Login() {
   const location = useLocation();
   const [params] = useSearchParams();
   const intent = params.get("intent");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
+  
+  // Pre-fill credentials from URL params (role selection page)
+  const urlUsername = params.get("username");
+  const urlPassword = params.get("password");
+  const autoLogin = params.get("autoLogin");
+  
+  const [username, setUsername] = useState(urlUsername || "");
+  const [password, setPassword] = useState(urlPassword || "");
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState({});
   const [busy, setBusy] = useState(false);
 
   const officerTone = intent === "officer";
+
+  // Auto-login when autoLogin=true
+  useEffect(() => {
+    if (autoLogin === "true" && urlUsername && urlPassword && !busy) {
+      handleAutoLogin();
+    }
+  }, []);
+
+  async function handleAutoLogin() {
+    setBusy(true);
+    setError("");
+    try {
+      const nextUser = await login(urlUsername.trim(), urlPassword);
+      const dest = ROLE_HOME[nextUser.role] || "/app/dashboard";
+      navigate(dest, { replace: true });
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  }
 
   function validate() {
     const next = {};

@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes, useSearchParams } from "react-router-dom";
 import AppTopBar from "./components/AppTopBar";
 import { BeeDoodle, LeafCorner, Sprig } from "./components/Decor";
+import FloatingLanguageSwitcher from "./components/FloatingLanguageSwitcher";
 import NavSidebar from "./components/NavSidebar";
 import OfflineBanner from "./components/OfflineBanner";
 import PublicHeader from "./components/PublicHeader";
@@ -9,10 +10,12 @@ import SiteFooter from "./components/SiteFooter";
 import VoiceAgent from "./components/VoiceAgent";
 import AdminAnalytics from "./pages/AdminAnalytics";
 import AdminRegister from "./pages/AdminRegister";
+import AdminRoles from "./pages/AdminRoles";
 import Alerts from "./pages/Alerts";
 import BeekeeperHome from "./pages/BeekeeperHome";
 import CloneWatch from "./pages/CloneWatch";
 import ConsumerVerify from "./pages/ConsumerVerify";
+import DemoDesk from "./pages/DemoDesk";
 import Forbidden from "./pages/Forbidden";
 import ForgotPassword from "./pages/ForgotPassword";
 import HiveMonitor from "./pages/HiveMonitor";
@@ -117,7 +120,9 @@ export default function App() {
   const { role } = useAuth();
 
   return (
-    <Routes>
+    <>
+      <FloatingLanguageSwitcher />
+      <Routes>
       <Route
         path="/"
         element={
@@ -159,10 +164,26 @@ export default function App() {
         }
       />
       <Route
+        path="/demo-desk"
+        element={
+          <PublicLayout>
+            <DemoDesk />
+          </PublicLayout>
+        }
+      />
+      <Route
         path="/login"
         element={
           <PublicLayout>
             <Login />
+          </PublicLayout>
+        }
+      />
+      <Route
+        path="/admin-roles"
+        element={
+          <PublicLayout>
+            <AdminRoles />
           </PublicLayout>
         }
       />
@@ -376,5 +397,6 @@ export default function App() {
         }
       />
     </Routes>
+    </>
   );
 }

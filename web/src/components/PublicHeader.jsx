@@ -6,15 +6,19 @@ import LanguageSelect from "./LanguageSelect";
 export default function PublicHeader() {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
+  
   return (
     <header className="public-header">
       <Link to="/" className="public-wordmark">
         <span className="brand">{t("brand.name")}</span>
         <span className="muted">{t("brand.tagline")}</span>
       </Link>
-      <button type="button" className="ghost menu-toggle" onClick={() => setOpen((value) => !value)}>
-        {t("nav.menu")}
-      </button>
+      
+      {/* Admin Button - Links to Demo Desk */}
+      <Link to="/demo-desk" className="ghost menu-toggle admin-link">
+        Admin
+      </Link>
+      
       <nav className={`public-links ${open ? "open" : ""}`} aria-label="Public">
         <NavLink to="/" end>
           {t("nav.home")}

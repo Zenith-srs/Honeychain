@@ -69,19 +69,25 @@ SPA_DIR = Path(__file__).resolve().parent.parent / "web" / "dist"
 HONEYCHAIN_ENV = os.environ.get("HONEYCHAIN_ENV", "development").lower()
 HONEYCHAIN_DEMO_MODE = os.environ.get("HONEYCHAIN_DEMO_MODE", "false").lower() == "true"
 
-# Demo role credentials
+# Set demo staff passwords as environment variables for seeding
+if HONEYCHAIN_DEMO_MODE:
+    os.environ.setdefault("ADMIN_PASSWORD", os.environ.get("HONEYCHAIN_DEMO_ADMIN_PASSWORD", "KvicAdmin@2024"))
+    os.environ.setdefault("OFFICER_PASSWORD", os.environ.get("HONEYCHAIN_DEMO_OFFICER_PASSWORD", "KvicOfficer@2024"))
+    os.environ.setdefault("LAB_PASSWORD", os.environ.get("HONEYCHAIN_DEMO_LAB_PASSWORD", "LabInspector@2024"))
+
+# Demo role credentials - Updated for KVIC roles
 DEMO_CREDENTIALS = {
-    "admin": {
-        "username": os.environ.get("HONEYCHAIN_DEMO_ADMIN_USERNAME", "demo_admin"),
-        "password": os.environ.get("HONEYCHAIN_DEMO_ADMIN_PASSWORD", "demo123"),
+    "kvic_admin": {
+        "username": os.environ.get("HONEYCHAIN_DEMO_KVIC_ADMIN_USERNAME", "kvic_admin"),
+        "password": os.environ.get("HONEYCHAIN_DEMO_KVIC_ADMIN_PASSWORD", "KvicAdmin@2024"),
     },
-    "officer": {
-        "username": os.environ.get("HONEYCHAIN_DEMO_OFFICER_USERNAME", "demo_officer"),
-        "password": os.environ.get("HONEYCHAIN_DEMO_OFFICER_PASSWORD", "demo123"),
+    "kvic_officer": {
+        "username": os.environ.get("HONEYCHAIN_DEMO_KVIC_OFFICER_USERNAME", "kvic_officer"),
+        "password": os.environ.get("HONEYCHAIN_DEMO_KVIC_OFFICER_PASSWORD", "KvicOfficer@2024"),
     },
-    "lab": {
-        "username": os.environ.get("HONEYCHAIN_DEMO_LAB_USERNAME", "demo_lab"),
-        "password": os.environ.get("HONEYCHAIN_DEMO_LAB_PASSWORD", "demo123"),
+    "lab_inspector": {
+        "username": os.environ.get("HONEYCHAIN_DEMO_LAB_INSPECTOR_USERNAME", "lab_inspector"),
+        "password": os.environ.get("HONEYCHAIN_DEMO_LAB_INSPECTOR_PASSWORD", "LabInspector@2024"),
     },
 }
 
@@ -92,7 +98,7 @@ if HONEYCHAIN_DEMO_MODE:
         HONEYCHAIN_ENV
     )
     logger.info(
-        "Demo login available at /api/auth/demo-login/{role} for roles: admin, officer, lab"
+        "Demo login available at /api/auth/demo-login/{role} for roles: kvic_admin, kvic_officer, lab_inspector"
     )
 else:
     logger.info("Demo mode disabled. Use standard authentication only.")
@@ -147,7 +153,7 @@ def create_app(*, bootstrap: bool = True) -> FastAPI:
     application.add_middleware(
         CORSMiddleware,
         allow_origins=_cors_origins(),
-        allow_origin_regex=r"https://.*\.(onrender\.com|vercel\.app)",
+        allow_origin_regex=r"https://.*\.(onrender\.com|vercel\.app|netlify\.app)",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
