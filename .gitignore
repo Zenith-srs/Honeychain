@@ -83,6 +83,25 @@ node_modules/
 .next/
 dist/
 web/dist/
+web/.netlify/
+
+
+# ----------------------------------------------------------
+# EXECUTABLES & BINARIES
+# ----------------------------------------------------------
+# Don't commit large executable files
+#
+*.exe
+*.zip
+cloudflared.exe
+ngrok.exe
+ngrok.zip
+
+
+# ----------------------------------------------------------
+# UTILITY SCRIPTS (Local Development Only)
+# ----------------------------------------------------------
+check_db.py
 
 
 # ----------------------------------------------------------
