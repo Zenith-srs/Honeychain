@@ -1,3 +1,4 @@
+# HoneyChain Backend - Docker Image
 # Use Python 3.10 slim image
 FROM python:3.10-slim
 
