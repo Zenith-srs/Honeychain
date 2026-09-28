@@ -50,7 +50,7 @@ from backend.routers import (
     harvests,
     health,
     hives,
-    insights,
+    # insights,  # Disabled - requires ML service
     invitations,
     lab,
     ledger,
@@ -187,7 +187,7 @@ def create_app(*, bootstrap: bool = True) -> FastAPI:
     application.include_router(ledger.router)
     application.include_router(verify.router)
     application.include_router(clonewatch.router)
-    application.include_router(insights.router)
+    # application.include_router(insights.router)  # Disabled - requires ML service
     # application.include_router(ml.router)  # Disabled for deployment
     # application.include_router(assistant.router)  # Disabled for deployment
     application.include_router(auth.router)
