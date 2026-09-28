@@ -10,3 +10,5 @@ httpx==0.26.0
 passlib==1.7.4
 bcrypt==4.1.2
 pydantic-core==2.16.2
+qrcode==7.4.2
+pillow==10.2.0
