@@ -13,6 +13,8 @@ services:
         generateValue: true
       - key: ENVIRONMENT
         value: production
+      - key: HONEYCHAIN_DEMO_MODE
+        value: true
       - key: ADMIN_PASSWORD
         value: KvicAdmin@2024
       - key: OFFICER_PASSWORD
