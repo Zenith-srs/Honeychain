@@ -46,7 +46,7 @@ from backend.routers import (
     auth,
     batches,
     clonewatch,
-    demo,
+    # demo,  # Disabled - requires simulator module
     harvests,
     health,
     hives,
