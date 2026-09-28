@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from "react-router-do
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../auth";
 import AuthShell, { FieldError, PasswordField } from "../components/AuthShell";
-import DemoLoginPanel from "../components/DemoLoginPanel";
+// import DemoLoginPanel from "../components/DemoLoginPanel"; // Removed - use /demo-desk instead
 import { Banner } from "../components/Ui";
 import { ROLE_HOME } from "../navConfig";
 
@@ -150,7 +150,7 @@ export default function Login() {
           {busy ? t("login.submitting") : t("login.submit")}
         </button>
       </form>
-      <DemoLoginPanel />
+      {/* DemoLoginPanel removed - use /demo-desk for demo access */}
       <p className="muted">
         {t("login.registerTitle")} <Link to="/register">{t("nav.register")}</Link>
       </p>
