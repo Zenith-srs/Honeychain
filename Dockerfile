@@ -11,8 +11,10 @@ COPY requirements.txt .
 # Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# Copy application code (exclude ML directories)
 COPY backend ./backend
+RUN rm -rf ./backend/services/ml_service.py ./backend/routers/ml.py || true
+
 COPY start_railway.py .
 
 # Set environment variables (Railway will inject these from environment)
