@@ -14,7 +14,12 @@ from backend.models.base import Base
 
 # Default file lives at the repo root so a server restart keeps data.
 # Tests override HONEYCHAIN_DATABASE_URL with a temporary SQLite file.
-_DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent / "honeychain.db"
+# For Railway/Docker deployment, use /tmp which is always writable
+if os.environ.get("RAILWAY_ENVIRONMENT"):
+    _DEFAULT_DB_PATH = Path("/tmp/honeychain.db")
+else:
+    _DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent / "honeychain.db"
+
 DATABASE_URL = os.environ.get(
     "HONEYCHAIN_DATABASE_URL",
     f"sqlite:///{_DEFAULT_DB_PATH}",
