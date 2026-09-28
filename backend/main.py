@@ -57,6 +57,7 @@ from backend.routers import (
     market,
     packages,
     public,
+    seed_manual,  # Manual seeding for Railway troubleshooting
     sensors,
     users,
     verify,
@@ -198,6 +199,7 @@ def create_app(*, bootstrap: bool = True) -> FastAPI:
     application.include_router(analytics.router)
     application.include_router(users.router)
     application.include_router(invitations.router)
+    application.include_router(seed_manual.router)  # Manual seeding endpoint
     # application.include_router(demo.router)  # Disabled - requires simulator
     _mount_spa(application)
     return application
