@@ -11,9 +11,14 @@ COPY requirements.txt .
 # Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code (exclude ML directories)
+# Copy application code (exclude ML and simulator files)
 COPY backend ./backend
-RUN rm -rf ./backend/services/ml_service.py ./backend/routers/ml.py || true
+
+# Remove ML service files to prevent import errors
+RUN rm -f ./backend/services/ml_service.py \
+    ./backend/routers/ml.py \
+    ./backend/routers/assistant.py \
+    ./backend/routers/demo.py || true
 
 COPY start_railway.py .
 
